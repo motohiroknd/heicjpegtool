@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HEIC to JPEG Converter</title>
+    <!-- Material Design Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- HEIC Conversion Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js"></script>
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .drop-zone {
+            transition: all 0.3s ease;
+            border: 2px dashed #dee2e6;
+        }
+        .drop-zone.drag-over {
+            border-color: #6200ee;
+            background-color: #f3e8ff;
+            transform: scale(1.02);
+        }
+        .ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        .loading-spinner {
+            border: 3px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 3px solid #6200ee;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .card {
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            border-radius: 16px;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Main Container -->
+    <div class="max-w-xl w-full">
+        <div class="card bg-white p-8 space-y-8">
+            <!-- Header -->
+            <div class="text-center">
+                <div class="inline-flex items-center justify-center w-16 h-16 bg-purple-100 text-purple-600 rounded-full mb-4">
+                    <span class="material-icons-round text-3xl">image_search</span>
+                </div>
+                <h1 class="text-2xl font-bold text-gray-800">HEIC to JPEG</h1>
+                <p class="text-gray-500 mt-2 text-sm">iPhoneの写真をどこでも使えるJPEGに変換します</p>
+            </div>
+
+            <!-- Upload Zone -->
+            <div id="dropZone" class="drop-zone rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-50">
+                <input type="file" id="fileInput" class="hidden" accept=".heic">
+                <span class="material-icons-round text-5xl text-gray-400 mb-4">cloud_upload</span>
+                <p class="text-gray-600 font-medium text-center">HEICファイルをドロップするか、<br><span class="text-purple-600">ファイルを選択</span>してください</p>
+                <p class="text-gray-400 text-xs mt-2">※ブラウザ内で処理されるため、画像は送信されません</p>
+            </div>
+
+            <!-- Preview & Status Area (Hidden initially) -->
+            <div id="statusArea" class="hidden space-y-4">
+                <div id="fileInfo" class="flex items-center p-4 bg-gray-50 rounded-xl">
+                    <span class="material-icons-round text-gray-400 mr-3">insert_drive_file</span>
+                    <div class="flex-1 overflow-hidden">
+                        <p id="fileName" class="text-sm font-medium text-gray-800 truncate">filename.heic</p>
+                        <p id="fileSize" class="text-xs text-gray-500">0.0 MB</p>
+                    </div>
+                    <div id="loadingIndicator" class="hidden">
+                        <div class="loading-spinner"></div>
+                    </div>
+                </div>
+
+                <!-- Action Button -->
+                <button id="convertBtn" class="ripple w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-4 px-6 rounded-xl transition flex items-center justify-center space-x-2">
+                    <span class="material-icons-round">transform</span>
+                    <span>JPEGに変換して保存</span>
+                </button>
+            </div>
+
+            <!-- Success Message -->
+            <div id="successMsg" class="hidden text-center text-green-600 bg-green-50 p-4 rounded-xl flex items-center justify-center space-x-2">
+                <span class="material-icons-round">check_circle</span>
+                <span class="text-sm font-medium">変換が完了しました！</span>
+            </div>
+        </div>
+
+        <!-- Footer Info -->
+        <p class="mt-8 text-center text-gray-400 text-xs uppercase tracking-widest font-medium">Privacy First • Local Processing</p>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const statusArea = document.getElementById('statusArea');
+        const fileNameEl = document.getElementById('fileName');
+        const fileSizeEl = document.getElementById('fileSize');
+        const convertBtn = document.getElementById('convertBtn');
+        const loadingIndicator = document.getElementById('loadingIndicator');
+        const successMsg = document.getElementById('successMsg');
+
+        let selectedFile = null;
+
+        // Click to upload
+        dropZone.addEventListener('click', () => fileInput.click());
+
+        // File Selection
+        fileInput.addEventListener('change', handleFileSelect);
+
+        // Drag and Drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            if (e.dataTransfer.files.length > 0) {
+                const file = e.dataTransfer.files[0];
+                if (file.name.toLowerCase().endsWith('.heic')) {
+                    processFile(file);
+                } else {
+                    showMessage('HEICファイルを選択してください', 'error');
+                }
+            }
+        });
+
+        function handleFileSelect(e) {
+            if (e.target.files.length > 0) {
+                processFile(e.target.files[0]);
+            }
+        }
+
+        function processFile(file) {
+            selectedFile = file;
+            fileNameEl.textContent = file.name;
+            fileSizeEl.textContent = (file.size / (1024 * 1024)).toFixed(2) + ' MB';
+            statusArea.classList.remove('hidden');
+            successMsg.classList.add('hidden');
+            convertBtn.disabled = false;
+            convertBtn.style.opacity = '1';
+        }
+
+        convertBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            try {
+                // UI Update
+                convertBtn.disabled = true;
+                convertBtn.style.opacity = '0.7';
+                convertBtn.innerHTML = '<span class="material-icons-round animate-spin">sync</span> <span>変換中...</span>';
+                loadingIndicator.classList.remove('hidden');
+
+                // Conversion using heic2any
+                const blob = await heic2any({
+                    blob: selectedFile,
+                    toType: "image/jpeg",
+                    quality: 0.8
+                });
+
+                // Download Link Creation
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = selectedFile.name.replace(/\.[^/.]+$/, "") + ".jpg";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                // Success UI
+                successMsg.classList.remove('hidden');
+                convertBtn.innerHTML = '<span class="material-icons-round">transform</span> <span>JPEGに変換して保存</span>';
+                loadingIndicator.classList.add('hidden');
+                
+            } catch (error) {
+                console.error(error);
+                alert('変換に失敗しました。ファイルが破損しているか、対応していない可能性があります。');
+                convertBtn.innerHTML = '<span class="material-icons-round">error</span> <span>失敗しました</span>';
+            } finally {
+                convertBtn.disabled = false;
+                convertBtn.style.opacity = '1';
+            }
+        });
+
+        function showMessage(text, type) {
+            // Simple notification logic could be added here
+            alert(text);
+        }
+    </script>
+</body>
+</html>
